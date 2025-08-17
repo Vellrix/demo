@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vellrix Demo – Shift Handoff Automation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { background: #f6f8fb; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React 18 + ReactDOM 18 UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <!-- Babel for JSX in the browser (fine for demo) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+
+    function Badge({ children }) {
+      return (
+        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+          {children}
+        </span>
+      );
+    }
+
+    function Pill({ tone = "neutral", children }) {
+      const tones = {
+        success: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        warn: "bg-amber-50 text-amber-800 border-amber-200",
+        danger: "bg-rose-50 text-rose-700 border-rose-200",
+        neutral: "bg-slate-50 text-slate-700 border-slate-200",
+      };
+      return (
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${tones[tone]}`}>
+          {children}
+        </span>
+      );
+    }
+
+    function Button({ variant = "primary", className = "", ...props }) {
+      const base =
+        "inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed";
+      const variants = {
+        primary:
+          "bg-slate-900 text-white hover:bg-slate-800 shadow-sm hover:shadow disabled:bg-slate-700",
+        ghost:
+          "bg-white text-slate-900 border border-slate-200 hover:bg-slate-50",
+        subtle:
+          "bg-slate-100 text-slate-900 hover:bg-slate-200",
+        danger:
+          "bg-rose-600 text-white hover:bg-rose-500",
+      };
+      return <button className={`${base} ${variants[variant]} ${className}`} {...props} />;
+    }
+
+    function Card({ className = "", children }) {
+      return (
+        <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function CardHeader({ title, subtitle, right }) {
+      return (
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-4 sm:p-5">
+          <div className="space-y-1">
+            <h3 className="text-base sm:text-lg font-semibold text-slate-900">{title}</h3>
+            {subtitle ? (
+              <p className="text-xs sm:text-sm text-slate-500">{subtitle}</p>
+            ) : null}
+          </div>
+          {right}
+        </div>
+      );
+    }
+
+    function CardBody({ children, className = "" }) {
+      return <div className={`p-4 sm:p-5 ${className}`}>{children}</div>;
+    }
+
+    function Field({ label, children, hint, required }) {
+      return (
+        <label className="block space-y-1.5">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-700">
+            <span>{label}</span>
+            {required ? <Pill>Required</Pill> : null}
+          </div>
+          {children}
+          {hint ? <p className="text-[11px] text-slate-500">{hint}</p> : null}
+        </label>
+      );
+    }
+
+    function Input({ className = "", ...props }) {
+      return (
+        <input
+          className={`w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-0 transition-shadow focus:border-slate-400 focus:shadow-[0_0_0_3px_rgba(15,23,42,0.08)] ${className}`}
+          {...props}
+        />
+      );
+    }
+
+    function Select({ className = "", children, ...props }) {
+      return (
+        <select
+          className={`w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:shadow-[0_0_0_3px_rgba(15,23,42,0.08)] ${className}`}
+          {...props}
+        >
+          {children}
+        </select>
+      );
+    }
+
+    function Toggle({ checked, onChange }) {
+      return (
+        <button
+          type="button"
+          onClick={() => onChange(!checked)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? "bg-slate-900" : "bg-slate-300"}`}
+        >
+          <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${checked ? "translate-x-5" : "translate-x-1"}`}/>
+        </button>
+      );
+    }
+
+    function Progress({ value }) {
+      return (
+        <div className="h-2 w-full rounded-full bg-slate-100">
+          <div
+            className="h-2 rounded-full bg-slate-900 transition-all"
+            style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+          />
+        </div>
+      );
+    }
+
+    function Toast({ open, tone = "success", message, onClose }) {
+      if (!open) return null;
+      const tones = {
+        success: "bg-emerald-600 text-white",
+        warn: "bg-amber-600 text-white",
+        danger: "bg-rose-600 text-white",
+        neutral: "bg-slate-800 text-white",
+      };
+      React.useEffect(() => {
+        const t = setTimeout(() => onClose?.(), 2500);
+        return () => clearTimeout(t);
+      }, [open]);
+      return (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className={`rounded-xl px-4 py-3 shadow-lg ${tones[tone]}`}>{message}</div>
+        </div>
+      );
+    }
+
+    const sampleColumns = [
+      "WorkCenter",
+      "Job",
+      "SKU",
+      "Product",
+      "PlannedQty",
+      "ProducedGoodQty",
+      "ScrapQty",
+      "ScrapReason",
+      "RuntimeMin",
+      "DowntimeMin",
+      "Timestamp",
+    ];
+
+    const sampleRows = [
+      {
+        WorkCenter: "Extruder-02",
+        Job: "JOB-45719",
+        SKU: "PL-TRAY-12x8",
+        Product: "Tray 12x8 OPS",
+        PlannedQty: 1800,
+        ProducedGoodQty: 1730,
+        ScrapQty: 42,
+        ScrapReason: "Short shot",
+        RuntimeMin: 401,
+        DowntimeMin: 79,
+        Timestamp: "2025-08-16 06:45",
+      },
+      {
+        WorkCenter: "Thermoformer-01",
+        Job: "JOB-91822",
+        SKU: "PL-LID-12x8",
+        Product: "Lid 12x8 OPS",
+        PlannedQty: 2100,
+        ProducedGoodQty: 2068,
+        ScrapQty: 15,
+        ScrapReason: "Trim defect",
+        RuntimeMin: 428,
+        DowntimeMin: 52,
+        Timestamp: "2025-08-16 07:20",
+      },
+    ];
+
+    function VellrixDemo() {
+      const [step, setStep] = useState(1);
+      const [isLoading, setIsLoading] = useState(false);
+      const [progress, setProgress] = useState(0);
+      const [filesCount, setFilesCount] = useState(0);
+      const [parseStats, setParseStats] = useState({ rows: 0, cols: 0 });
+      const [toast, setToast] = useState({ open: false, tone: "success", message: "" });
+
+      const [mapping, setMapping] = useState({
+        SKU: "SKU",
+        Qty: "ProducedGoodQty",
+        WorkCenter: "WorkCenter",
+        Timestamp: "Timestamp",
+      });
+
+      const [rules, setRules] = useState({
+        alertDowntime: true,
+        downtimeThreshold: 15,
+        slack: true,
+        emailOps: true,
+        emailMaint: true,
+        scheduleTime: "06:30",
+        weekdays: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: true, Sat: false, Sun: false },
+      });
+
+      const [recipients, setRecipients] = useState({
+        opsAShift: true,
+        qualityTeam: true,
+        scheduling: true,
+        maintenance: true,
+      });
+
+      const [activity, setActivity] = useState([
+        { time: "06:31", text: "End of Shift sent to 'Ops — A Shift' (12 recipients)", meta: "0 bounces • 6 opens", tone: "success" },
+      ]);
+
+      const simulateUpload = () => {
+        setIsLoading(true);
+        setProgress(0);
+        setFilesCount(3);
+        let p = 0;
+        const int = setInterval(() => {
+          p += Math.random() * 25;
+          if (p >= 100) {
+            p = 100;
+            clearInterval(int);
+            setIsLoading(false);
+            setParseStats({ rows: 12486, cols: 21 });
+            setToast({ open: true, tone: "success", message: "Files parsed and validated" });
+            setTimeout(() => setStep(2), 450);
+          }
+          setProgress(p);
+        }, 260);
+      };
+
+      const handleAutoDetect = () => {
+        setMapping({ SKU: "SKU", Qty: "ProducedGoodQty", WorkCenter: "WorkCenter", Timestamp: "Timestamp" });
+        setToast({ open: true, tone: "success", message: "Columns auto-mapped" });
+      };
+
+      const handleSaveRules = () => {
+        setToast({ open: true, tone: "success", message: "Rules & schedule saved" });
+        setTimeout(() => setStep(4), 400);
+      };
+
+      const handleSendTest = () => {
+        setToast({ open: true, tone: "success", message: "Test email sent to you" });
+      };
+
+      const handleStartSchedule = () => {
+        setToast({ open: true, tone: "success", message: "Daily schedule activated" });
+        setActivity((a) => [
+          { time: "Now", text: "Schedule set: Daily 06:30 to Ops, Quality, Scheduling", meta: "via Email + Slack", tone: "neutral" },
+          ...a,
+        ]);
+        setTimeout(() => setStep(5), 300);
+      };
+
+      const WeekdayToggle = ({ day }) => (
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+            checked={rules.weekdays[day]}
+            onChange={(e) => setRules((r) => ({ ...r, weekdays: { ...r.weekdays, [day]: e.target.checked } }))}
+          />
+          <span>{day}</span>
+        </label>
+      );
+
+      return (
+        <div className="mx-auto max-w-6xl p-4 sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Badge>Vellrix Systems</Badge>
+                <Pill tone="neutral">Demo Prototype</Pill>
+              </div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Shift Handoff Automation</h1>
+              <p className="text-sm text-slate-600">Upload ERP/MES exports → Auto-map → Generate and schedule shift emails.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => setStep(1)}>Restart</Button>
+              <Button onClick={() => setStep((s) => Math.min(5, s + 1))} disabled={step === 5}>Next</Button>
+            </div>
+          </div>
+
+          <Card className="mb-4">
+            <CardBody>
+              <div className="grid grid-cols-5 gap-2 text-xs font-medium">
+                {["Upload", "Map", "Rules", "Recipients", "Activity"].map((label, i) => {
+                  const active = step === i + 1;
+                  const done = step > i + 1;
+                  return (
+                    <div
+                      key={label}
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2 ${active ? "border-slate-900 bg-slate-900 text-white" : done ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-700"}`}
+                    >
+                      <span>{i + 1}. {label}</span>
+                      {done ? (
+                        <svg viewBox="0 0 20 20" className="h-4 w-4"><path fill="currentColor" d="M8.5 13.1 5.4 10l-1.1 1.1 4.2 4.2 8-8-1.1-1.1z"/></svg>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Step 1: Upload */}
+          {step === 1 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <Card className="lg:col-span-2">
+                <CardHeader
+                  title="Upload your ERP/MES exports"
+                  subtitle="CSV or XLSX. We'll validate headers and auto-detect key fields."
+                  right={<Pill tone="neutral">Supported: CSV, XLSX</Pill>}
+                />
+                <CardBody>
+                  <div className="relative grid place-items-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-12 text-center">
+                    {isLoading ? (
+                      <div className="w-full max-w-sm space-y-4">
+                        <div className="animate-spin h-8 w-8 border-2 border-slate-900 border-t-transparent rounded-full mx-auto"></div>
+                        <p className="text-sm font-medium text-slate-900">Processing {filesCount} files...</p>
+                        <Progress value={progress} />
+                        <p className="text-xs text-slate-500">{Math.round(progress)}% complete</p>
+                      </div>
+                    ) : parseStats.rows > 0 ? (
+                      <div className="space-y-4">
+                        <div className="h-12 w-12 rounded-xl bg-emerald-100 mx-auto flex items-center justify-center">
+                          <svg className="h-6 w-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900">Files uploaded successfully</h3>
+                          <p className="text-sm text-slate-600">{parseStats.rows.toLocaleString()} rows, {parseStats.cols} columns detected</p>
+                        </div>
+                        <Button onClick={() => setStep(2)}>Continue to mapping</Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="h-12 w-12 rounded-xl bg-slate-100 mx-auto flex items-center justify-center">
+                          <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900">Drag files here or click to browse</h3>
+                          <p className="text-sm text-slate-600">Upload your production data exports</p>
+                        </div>
+                        <Button onClick={simulateUpload}>Simulate Upload</Button>
+                      </div>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader title="Sample Data Preview" />
+                <CardBody>
+                  <div className="space-y-3">
+                    <div className="text-xs font-medium text-slate-700">Expected columns:</div>
+                    <div className="flex flex-wrap gap-1">
+                      {sampleColumns.slice(0, 6).map(col => (
+                        <Badge key={col}>{col}</Badge>
+                      ))}
+                      <Badge>+{sampleColumns.length - 6} more</Badge>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* Step 2: Map Columns */}
+          {step === 2 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader 
+                  title="Map your columns"
+                  subtitle="Match your data fields to our standard format"
+                  right={<Button variant="subtle" onClick={handleAutoDetect}>Auto-detect</Button>}
+                />
+                <CardBody className="space-y-4">
+                  <Field label="SKU/Part Number" required>
+                    <Select value={mapping.SKU} onChange={(e) => setMapping(m => ({...m, SKU: e.target.value}))}>
+                      <option value="">Select column...</option>
+                      {sampleColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Quantity Produced" required>
+                    <Select value={mapping.Qty} onChange={(e) => setMapping(m => ({...m, Qty: e.target.value}))}>
+                      <option value="">Select column...</option>
+                      {sampleColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Work Center" required>
+                    <Select value={mapping.WorkCenter} onChange={(e) => setMapping(m => ({...m, WorkCenter: e.target.value}))}>
+                      <option value="">Select column...</option>
+                      {sampleColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Timestamp" required>
+                    <Select value={mapping.Timestamp} onChange={(e) => setMapping(m => ({...m, Timestamp: e.target.value}))}>
+                      <option value="">Select column...</option>
+                      {sampleColumns.map(col => <option key={col} value={col}>{col}</option>)}
+                    </Select>
+                  </Field>
+                  <Button onClick={() => setStep(3)} className="w-full">Continue to rules</Button>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader title="Data Preview" subtitle="Sample of your mapped data" />
+                <CardBody>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-2 font-medium text-slate-700">SKU</th>
+                          <th className="text-left py-2 font-medium text-slate-700">Qty</th>
+                          <th className="text-left py-2 font-medium text-slate-700">Work Center</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sampleRows.map((row, i) => (
+                          <tr key={i} className="border-b border-slate-100">
+                            <td className="py-2 text-slate-900">{row.SKU}</td>
+                            <td className="py-2 text-slate-900">{row.ProducedGoodQty}</td>
+                            <td className="py-2 text-slate-900">{row.WorkCenter}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">Mapped successfully</span>
+                      <Pill tone="success">Valid</Pill>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* Step 3: Rules & Schedule */}
+          {step === 3 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader title="Alert Rules" subtitle="Set up automated notifications" />
+                <CardBody className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">Downtime alerts</div>
+                      <div className="text-xs text-slate-500">Alert when downtime exceeds threshold</div>
+                    </div>
+                    <Toggle checked={rules.alertDowntime} onChange={(v) => setRules(r => ({...r, alertDowntime: v}))} />
+                  </div>
+                  
+                  {rules.alertDowntime && (
+                    <Field label="Downtime threshold (minutes)" hint="Alert when downtime exceeds this value">
+                      <Input 
+                        type="number" 
+                        value={rules.downtimeThreshold} 
+                        onChange={(e) => setRules(r => ({...r, downtimeThreshold: parseInt(e.target.value) || 15}))}
+                      />
+                    </Field>
+                  )}
+
+                  <div className="space-y-4">
+                    <div className="text-sm font-medium text-slate-900">Notification channels</div>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-700">Slack notifications</span>
+                        <Toggle checked={rules.slack} onChange={(v) => setRules(r => ({...r, slack: v}))} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-700">Email operations team</span>
+                        <Toggle checked={rules.emailOps} onChange={(v) => setRules(r => ({...r, emailOps: v}))} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-700">Email maintenance team</span>
+                        <Toggle checked={rules.emailMaint} onChange={(v) => setRules(r => ({...r, emailMaint: v}))} />
+                      </div>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader title="Schedule" subtitle="When to send shift handoff reports" />
+                <CardBody className="space-y-6">
+                  <Field label="Send time">
+                    <Input 
+                      type="time" 
+                      value={rules.scheduleTime} 
+                      onChange={(e) => setRules(r => ({...r, scheduleTime: e.target.value}))}
+                    />
+                  </Field>
+
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-slate-900">Days of week</div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {Object.keys(rules.weekdays).map(day => (
+                        <WeekdayToggle key={day} day={day} />
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button onClick={handleSaveRules} className="w-full">Save rules & continue</Button>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* Step 4: Recipients */}
+          {step === 4 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader title="Email Recipients" subtitle="Who should receive the shift handoff reports?" />
+                <CardBody className="space-y-4">
+                  <div className="space-y-3">
+                    {Object.entries({
+                      opsAShift: "Operations Team - A Shift",
+                      qualityTeam: "Quality Assurance Team", 
+                      scheduling: "Production Scheduling",
+                      maintenance: "Maintenance Department"
+                    }).map(([key, label]) => (
+                      <div key={key} className="flex items-center justify-between p-3 rounded-xl border border-slate-200">
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">{label}</div>
+                          <div className="text-xs text-slate-500">
+                            {key === 'opsAShift' ? '12 recipients' : 
+                             key === 'qualityTeam' ? '8 recipients' :
+                             key === 'scheduling' ? '5 recipients' : '6 recipients'}
+                          </div>
+                        </div>
+                        <Toggle 
+                          checked={recipients[key]} 
+                          onChange={(v) => setRecipients(r => ({...r, [key]: v}))} 
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="pt-4 space-y-3">
+                    <Button onClick={handleSendTest} variant="subtle" className="w-full">
+                      Send test email
+                    </Button>
+                    <Button onClick={handleStartSchedule} className="w-full">
+                      Start daily schedule
+                    </Button>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader title="Email Preview" />
+                <CardBody>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
+                    <div className="font-semibold mb-2">Subject: End of Shift Report - A Shift (Aug 16, 06:30)</div>
+                    <div className="space-y-2 text-slate-600">
+                      <div><strong>Production Summary:</strong></div>
+                      <div>• Extruder-02: 1,730 units (96% of planned)</div>
+                      <div>• Thermoformer-01: 2,068 units (98% of planned)</div>
+                      <div></div>
+                      <div><strong>Downtime Alerts:</strong></div>
+                      <div>• Extruder-02: 79 min downtime ⚠️</div>
+                      <div></div>
+                      <div><strong>Quality Issues:</strong></div>
+                      <div>• Short shots: 42 units scrapped</div>
+                      <div>• Trim defects: 15 units scrapped</div>
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          {/* Step 5: Activity Monitor */}
+          {step === 5 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <Card className="lg:col-span-2">
+                <CardHeader title="Activity Monitor" subtitle="Real-time status of your automated reports" />
+                <CardBody>
+                  <div className="space-y-4">
+                    {activity.map((item, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50">
+                        <div className="text-xs font-mono text-slate-500 mt-1">{item.time}</div>
+                        <div className="flex-1">
+                          <div className="text-sm text-slate-900">{item.text}</div>
+                          {item.meta && <div className="text-xs text-slate-500 mt-1">{item.meta}</div>}
+                        </div>
+                        <Pill tone={item.tone}>Success</Pill>
+                      </div>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader title="Quick Actions" />
+                <CardBody className="space-y-3">
+                  <Button variant="subtle" className="w-full">
+                    Send manual report
+                  </Button>
+                  <Button variant="subtle" className="w-full">
+                    Edit schedule
+                  </Button>
+                  <Button variant="subtle" className="w-full">
+                    View all recipients
+                  </Button>
+                  <Button variant="danger" className="w-full">
+                    Pause automation
+                  </Button>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+
+          <Toast 
+            open={toast.open} 
+            tone={toast.tone} 
+            message={toast.message} 
+            onClose={() => setToast(t => ({...t, open: false}))} 
+          />
+        </div>
+      );
+    }
+
+    // Render the app
+    ReactDOM.render(<VellrixDemo />, document.getElementById('root'));
+  </script>
+</body>
+</html>
